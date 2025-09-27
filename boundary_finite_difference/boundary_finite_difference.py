@@ -5,9 +5,7 @@ from scipy.sparse import lil_matrix, identity
 from scipy.linalg import lu_factor, lu_solve, cho_factor, cho_solve
 import matplotlib.pyplot as plt
 
-class BVPSolver:
-    """Given a boundary conditions problem of the form u - alpha * u'' = fun it is numerically solved by a finite
-    difference scheme. The running time is measured and printed. The error of the stimation is also printed."""
+class Solver:
     def __init__(self,x0, xf, alpha, ua, ub, fun, left, right, exact = None):
         """ x0, xf (float) --- Interval where the ODE is solved.
             ua, ub (float) --- Boundary conditions.
@@ -26,137 +24,26 @@ class BVPSolver:
         self.fun = fun
         self.exact = exact
         self._validate_input()
-    
-    def solver(self, N, Internal_Call = False):
-        """
-          N (int) --- Number of partitions of the mesh."""
-        t1 = time.time()
-        dx, dx2, x, D, Id, b = self._mesh_and_sys_setting(N)
-        if self.left and self.right:  # Both Neumann.
-            # The first and last equations are changed.
-            D[N, N - 1] = 2 * D[N, N - 1]
-            D[0, 1] = 2 * D[0, 1]
         
-            # The first and last entry of b are changed.
-            b[0] -= self.ua * 2 * self.alpha / dx
-            b[N] += self.ub * 2 * self.alpha / dx
-
-        elif self.left:  # Left Neumann.
-            D[N, N] = 0.0
-            D[N, N - 1] = 0.0
-            D[0, 1] = 2 * D[0, 1]
-
-            b[0] -= self.ua * 2 * self.alpha / dx
-            b[N] += self.ub
-
-        elif self.right:  # Right Neumann.
-            D[0, 0] = 0.0
-            D[0, 1] = 0.0
-            D[N, N - 1] = 2 * D[N, N - 1]
-
-            b[0] += self.ua
-            b[N] += self.ub * 2 * self.alpha / dx
-
-        else:  # Both Dirichlet.
-            D[0, 0] = 0.0
-            D[0, 1] = 0.0
-            D[N, N] = 0.0
-            D[N, N - 1] = 0.0
-
-            b[0] = self.ua
-            b[N] = self.ub
-        # Change from lil to csc for performance in matrix calculation.
-        D = D.tocsc()
-        # Notice that the matrix A is not symmetric.(Cholesky does not apply.)
-        A = Id + self.alpha / dx2 * D
-    
-        # Solution of the system.
-        # Complete LU factorization of the sparse matrix A. 
-        LU = splu(A)
-        usol = LU.solve(b)
-
-        #We check the time and return the solution.
-        if not Internal_Call:
-            tf = time.time()
-            print(f"Runnign time: {format(tf - t1)}")
-        return x, usol
-            
+    def solver(self,Internal_Call = False, **kwargs):
+        return None, None
         
-    def solver_penalization(self, N, Internal_Call = False):
-        """
-          N (int) --- Number of partitions of the mesh."""
-        #Initialization and input data verification. 
-        N = int(N)
-        if(N < 2):
-            raise ValueError("Choose bigger N.")
-        M = 1e30  #Penalization factor
-        t1 = time.time()
-        dx, dx2, x, D, Id, b = self._mesh_and_sys_setting(N)
-        
-        # Clasification of the boundary conditions.
-        if self.left:  # Left is Neumann.
-            # Change the first and last row of the matrix D.
-            D[0, 1] = 2 * D[0, 1]
-            
-            # Change the first and last entry of the vector b.
-            b[0] -= self.ua * 2 * self.alpha / dx
-        else: # Left is not Neumann.
-            D[0, 0] = 0.0
-            D[0, 1] = 0.0
-            
-            b[0] = self.ua
-        if self.right:  # Right es Neumann.
-            D[N, N - 1] = 2 * D[N, N - 1]
-
-            b[N] += self.ub * 2 * self.alpha / dx
-        else:  # Right is not Neumann.
-            D[N, N] = 0.0
-            D[N, N - 1] = 0.0
-            
-            b[N] = self.ub
-        
-        #We go from lil to csc for performance in matrix operation.
-        D = D.tocsc()
-        A = Id + self.alpha / dx2 * D  #Notice A is non-symmetric    
-
-        # Solution of the system.
-        # Complete LU factorization of the sparse matrix A, 
-        # it could be Cholesky or Conjugate Gradient which suit symmetryc matrices.
-        LU = splu(A)
-        usol = LU.solve(b)
-
-        #We check the time and return the solution.
-        if not Internal_Call:
-            tf = time.time()
-            print(f"Runnign time: {format(tf - t1)}")
-        return x, usol
-        
-    def solution_plot(self, N, penalization = False):
+    def solution_plot(self, **kwargs):
         if (self.exact != None):
-            if(penalization):
-                x, usol = self.solver_penalization(N,Internal_Call = True) 
-                plt.plot(x, usol, "b", x, self.exact(x), "r")
-            else:
-                x, usol = self.solver(N,Internal_Call = True) 
+                x, usol = self.solver(Internal_Call = True, **kwargs) 
                 plt.plot(x, usol, "b", x, self.exact(x), "r")
         else:    
             raise ValueError("No exact solution was provided.")
     
-    def solution_error(self, N, penalization = False):
+    def solution_error(self, **kwargs):
         if (self.exact != None):
-            if(penalization):
-                x, usol = self.solver_penalization(N,Internal_Call = True) 
-                err = max(abs(usol - self.exact(x)))
-                print(f"Discretization error: {format(err)}")
-                return err
-            else:
-                x, usol = self.solver(N,Internal_Call = True) 
-                err = max(abs(usol - self.exact(x)))
-                print(f"Discretization error: {format(err)}")
-                return err
+            x, usol = self.solver(Internal_Call = True, **kwargs) 
+            err = max(abs(usol - self.exact(x)))
+            print(f"Discretization error: {format(err)}")
+            return err
         else:    
             raise ValueError("No exact solution was provided.")
-            
+        
     def _validate_input(self):
         if(self.x0 >= self.xf):
             raise ValueError("Degenerate interval.")
@@ -176,8 +63,161 @@ class BVPSolver:
         
         Id = identity(N + 1, dtype="float64", format="csc")
         
+        return dx, dx2, x, D, Id
+    
+
+class BVPSolver(Solver):
+    """Given a boundary conditions problem of the form u - alpha * u'' = fun it is numerically solved by a finite
+    difference scheme. The running time is measured and printed. The error of the stimation is also printed."""
+    def __init__(self,x0, xf, alpha, ua, ub, fun, left, right, exact = None):
+        """ x0, xf (float) --- Interval where the ODE is solved.
+            ua, ub (float) --- Boundary conditions.
+            fun (callable) --- Function which defines the ODE.
+            left (bool) --- If TRUE, the left boundary condition is Neumann. If FALSE it is Dirichlet. 
+            right (bool) --- The same applies for the right boundary condition.
+            exact (callable, optional) --- Exact solution of the problem. If given it automatically plots both the exact solution 
+                      and the numerical solution"""
+        super().__init__(x0, xf, alpha, ua, ub, fun, left, right, exact)
+    
+    
+    def solver(self, Internal_Call = False, N = None, **kwargs):
+        """
+          N (int) --- Number of partitions of the mesh."""
+        if N == None:
+            raise ValueError("N (number of partitions must be provided.")
+        N = int(N)
+        t1 = time.time()
+        dx, dx2, x, D, Id = self._mesh_and_sys_setting(N)
         b = self.fun(x)
-        return dx, dx2, x, D, Id, b
+        
+        # Clasification
+        if self.left:  # Left is Neumann
+            # Change first row of D
+            D[0, 1] = 2 * D[0, 1]
+            
+            # Change first and last entries of b
+            b[0] -= self.ua * 2 * self.alpha / dx
+        else: 
+            D[0, 0] = 0.0
+            D[0, 1] = 0.0
+            
+            b[0] = self.ua
+        if self.right:  # Right is Neumann
+            D[N, N - 1] = 2 * D[N, N - 1]
+
+            b[N] += self.ub * 2 * self.alpha / dx
+        else:  
+            D[N, N] = 0.0
+            D[N, N - 1] = 0.0
+            
+            b[N] = self.ub
+
+        # Change from lil to csc for performance in matrix calculation.
+        D = D.tocsc()
+        # Notice that the matrix A is not symmetric.(Cholesky does not apply.)
+        A = Id + self.alpha / dx2 * D
+    
+        # Solution of the system.
+        # Complete LU factorization of the sparse matrix A. 
+        LU = splu(A)
+        usol = LU.solve(b)
+
+        #We check the time and return the solution.
+        if not Internal_Call:
+            tf = time.time()
+            print(f"Runnign time: {format(tf - t1)}")
+        return x, usol
+    
+class HTLSolver(Solver):
+    """Given the heat equation u_t - alpha * u_xx = fun it is numerically solved by the implicit lines method. The running time is measured and printed. The error of the stimation is also printed."""
+    def __init__(self,x0, xf, t0, tf, alpha, u0:callable, ua:callable, ub:callable, fun, left, right, exact = None):
+        """ x0, xf (float) --- Interval where the ODE is solved.
+            ua, ub (float) --- Boundary conditions.
+            fun (callable) --- Function which defines the ODE.
+            left (bool) --- If TRUE, the left boundary condition is Neumann. If FALSE it is Dirichlet. 
+            right (bool) --- The same applies for the right boundary condition.
+            exact (callable, optional) --- Exact solution of the problem. If given it automatically plots both the exact solution 
+                      and the numerical solution"""
+        super().__init__(x0, xf, alpha, 0, 0, fun, left, right, exact)
+        self.t0 = t0
+        self.tf = tf
+        self.u0 = u0
+        self.ua = ua
+        self.ub = ub
+    
+    def solver(self, Internal_Call = False, N = None, M = None, **kwargs):
+        """
+          N (int) --- Number of partitions of the mesh."""
+        if N == None:
+            raise ValueError("N (number of partitions) must be provided.")
+        if M == None:
+            raise ValueError("M (number of partitions) must be provided.")
+        N = int(N)
+        M = int(M)
+        t1 = time.time()
+        dt = (self.tf -self.t0)/ M
+        t = np.linspace(self.t0, self.tf, M + 1)
+        dx, dx2, x, D, Id = self._mesh_and_sys_setting(N)
+        #Clasification
+        if self.left:  # Left is Neumann
+            # Change first row of D
+            D[0, 1] = 2 * D[0, 1]
+            
+            # Change first and last entries of b
+            ua_star = self.fun(x[0],t) - 2 * self.alpha * dt/dx * self.ua(t)
+        else: 
+            D[0, 0] = 0.0
+            D[0, 1] = 0.0
+            
+            ua_star = self.ua(t)
+        if self.right:  # Right is Neumann
+            D[N, N - 1] = 2 * D[N, N - 1]
+
+            ub_star = self.fun(x[0],t) + 2 * self.alpha * dt/dx * self.ub(t)
+        else:  
+            D[N, N] = 0.0
+            D[N, N - 1] = 0.0
+            
+            ub_star = self.ub(t)
+            
+        #pasamos de formato lil a csc, construimos A
+        D = D.tocsc()
+        A = Id + self.alpha * dt/dx2 * D
+        LU = splu(A)
+        #Inicializamos el vector de nodos
+        usol = self.u0(x)
+        cont = 0
+        
+        for n in range(M):
+            b = dt * self.fun(x,t[n+1]) + usol
+            # Change first and last entries of b
+            b[0] = ua_star[n+1] + int(self.left) * usol[0]
+            b[N] = ub_star[n+1] + int(self.right) * usol[-1]
+            usol = LU.solve(b)
+
+        #We check the time and return the solution.
+        if not Internal_Call:
+            tf = time.time()
+            print(f"Runnign time: {format(tf - t1)}")
+        return x, t, usol  
+    
+    def solution_plot(self, **kwargs):
+        if (self.exact != None):
+                x, t, usol = self.solver(Internal_Call = True, **kwargs) 
+                plt.plot(x, usol, "b", x, self.exact(x,t[-1]), "r")
+        else:    
+            raise ValueError("No exact solution was provided.")
+    
+    def solution_error(self, **kwargs):
+        if (self.exact != None):
+            x, t, usol = self.solver(Internal_Call = True, **kwargs) 
+            err = max(abs(usol - self.exact(x,t[-1])))
+            print(f"Discretization error: {format(err)}")
+            return err
+        else:    
+            raise ValueError("No exact solution was provided.")
+    
+            
     
 #Now we check the method with multiple calls which allow to empirically calculate its order.
 def f(x):
@@ -198,24 +238,51 @@ error0 = 1
 print("Direct Boundary.")
 plt.figure("No Penalization: Numerical Solution (Blue) and Exact Solution (Red)")
 for N in mesh:
-    error1 = equation.solution_error(N,False)
-    if N > 50:
-        print(f"With N = {N} the order is = {np.log(error0 / error1)/np.log(2)} \n")
-    else:
-        print(f"With N = {50} the order is = --- \n")
-    error0 = error1
-
-print("\n")
-print("Penalization Direct Boundary.")
-plt.figure("Penalization: Numerical Solution (Blue) and Exact Solution (Red)")
-for N in mesh:
-    error1 = equation.solution_error(N,True)
+    error1 = equation.solution_error(N = N)
     if N > 50:
         print(f"With N = {N} the order is = {np.log(error0 / error1)/np.log(2)} \n")
     else:
         print(f"With N = {50} the order is = --- \n")
     error0 = error1
     
+def f1(x,t):
+    """Functions wich defines equation 1."""
+    y = x * np.cos(x * t) + t**2 * np.sin(x * t)
+    return y
+
+def uexacta1(x,t):
+    """Exact solution of equation 1"""
+    y = np.sin(x * t)
+    return y
+
+def ub(t):
+    y = np.sin(t)
+    return y
+
+def ua(t):
+    y = t
+    return y
+
+def u0(x):
+    return 0
+
+u0 = np.vectorize(u0)
+
+equation2 = HTLSolver(0, 1, 0, 1, 1, u0, ua, ub, f1, True, False, uexacta1) #We call an object from HLTSolver
+
+print("\n")
+print("Penalization Direct Boundary.")
+mesh = [5,10,20,40]
+plt.figure("Penalization: Numerical Solution (Blue) and Exact Solution (Red)")
+for N in mesh:
+    error1 = equation2.solution_error(N = N, M = 1e4)
+    if N > 5:
+        print(f"With N = {N} the order is = {np.log(error0 / error1)/np.log(2)} \n")
+    else:
+        print(f"With N = {5} the order is = --- \n")
+    error0 = error1
+    
 #We can also plot the solution.
 
-equation.solution_plot(400)
+equation.solution_plot(N = 400)
+plt.show()
