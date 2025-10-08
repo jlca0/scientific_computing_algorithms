@@ -360,10 +360,66 @@ class QuadraticSolver:
         if(cont == 500):
             print("Maximum number of iterations (", iter_max, ") was reached.")
             
-        tf = time.time()  # CWe chek the time.
+        tf = time.time()  # We check the time.
         if not Internal_Call:
-            print("Tiempo de ejecucion:", format(tf - t1))
-            print("Número de iteraciones:", cont)
+            print("Running time:", format(tf - t1))
+            print("Iterations count:", cont)
+            
+        return x, u_new
+    
+    def solver_newton(self, Internal_Call = False, N = None, tol = None, **kwargs):
+        #Initialization.
+        if N == None:
+            raise ValueError("N (number of partitions) must be provided.")
+        if tol == None:
+            raise ValueError("tol (error tolerance) must be provided.")
+        iter_max = 500  #Maximum number of iterations.
+        t1 = time.time()
+        dx, dx2, x, D, Id = self._mesh_and_sys_setting(N)
+        U_diag = lil_matrix((N + 1, N + 1), dtype="float64")
+        U_diag.setdiag(np.ones(N + 1), 0)
+        U_diag = U_diag.tocsc()
+        D = self.nu/dx2 * D
+        D[0, 0] = 1.0
+        D[0, 1] = 0.0
+        D[N, N] = 1.0
+        D[N, N - 1] = 0.0
+        D = D.tocsc()
+        
+        #Resolution.
+        u_old = np.zeros(N+1)
+        u_new = np.zeros(N+1)
+        error = tol + 1
+        fun_x = self.fun(x)
+                
+        cont = 0 # Iteration counter.
+        while(error >= tol and cont < iter_max):
+            b = - self.nu/dx2 * D * u_old + u_old**2 + fun_x
+            b[0] = - u_old[0] + ua
+            b[-1] = - u_old[-1] + ub
+            # Jacobian matrix.
+            U_diag.setdiag(2 * u_old, 0)
+            J = self.nu/dx2 * D - U_diag
+            J[0, 0] = 1
+            J[0, 1] = 0
+            J[N, N] = 1
+            J[N, N-1] = 0
+            LU = splu(J)
+            
+            y_new = LU.solve(b)
+            u_new = y_new + u_old
+            error = max(abs(u_new - u_old))
+            u_old = u_new
+            
+            cont += 1
+            
+        if(cont == 500):
+            print("Maximum number of iterations (", iter_max, ") was reached.")
+            
+        tf = time.time()  # We check the time.
+        if not Internal_Call:
+            print("Running time:", format(tf - t1))
+            print("Iterations count:", cont)
             
         return x, u_new
             
