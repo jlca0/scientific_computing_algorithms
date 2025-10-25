@@ -1,4 +1,4 @@
-from base import Solver
+from solver.base import Solver
 import time
 import numpy as np
 from scipy.sparse.linalg import splu
