@@ -1,39 +1,78 @@
 import time
-from solver.base import Solver
+from typing import Callable, List, Optional, Tuple
+
 import numpy as np
-from scipy.sparse import lil_matrix, identity
+from scipy.sparse import identity, lil_matrix
 from scipy.sparse.linalg import splu
+
+from solver.base import Solver
 
 
 class schwarz_k(Solver):
+    """Schwarz domain decomposition solver for 1D problems.
+    
+    Solves equations of the form u - alpha * u'' = f using finite difference
+    scheme with Schwarz domain decomposition technique. The interval is
+    decomposed into k subintervals with overlaps.
+    """
 
-    def __init__(self, x0, xf, t0, tf, nu, ua, ub, fun, left, right, exact=None):
-        """Given the heat equation u - alfa * u'' = f (t,u) it is solved using
-        a finite difference scheme and Schwarz dominion decomposition technique.
-        --- x0, xf (float) --- Interval where the ODE is solved.
-        --- ua, ub (float) --- Boundary conditions.
-        --- fun (callable) --- Function which defines the ODE.
-        --- left (bool) --- If TRUE, the left boundary condition
-        is Neumann. If FALSE it is Dirichlet.
-        --- right (bool) --- The same applies for the right
-        boundary condition.
-        --- exact (callable, optional) --- Exact solution of the problem.
+    def __init__(
+        self,
+        x0: float,
+        xf: float,
+        nu: float,
+        ua: float,
+        ub: float,
+        fun: Callable,
+        left: bool,
+        right: bool,
+        exact: Optional[Callable] = None
+    ) -> None:
+        """Initialize Schwarz solver.
+        
+        Args:
+            x0: Lower bound of the spatial interval.
+            xf: Upper bound of the spatial interval.
+            nu: Diffusion coefficient (must be positive).
+            ua: Left boundary condition value.
+            ub: Right boundary condition value.
+            fun: Function defining the ODE (callable).
+            left: If True, left boundary condition is Neumann; if False, Dirichlet.
+            right: If True, right boundary condition is Neumann; if False, Dirichlet.
+            exact: Optional exact solution for error computation and plotting.
         """
         super().__init__(x0, xf, nu, ua, ub, fun, left, right, exact)
 
-    def solver(self, Internal_Call=False, N=None, l=None, tol=None, **kwargs):
-        """Interval is decomposed in k subintervals of length p[i].
-        ----------------
-        --- N:int --- Total number of partitions.
-        --- l:array([int]) --- A vector with entry l[i] corresponding to
-        the number of common nodes of the subintervals Ii and I(i+1).
-        --- tol: float --- Error tolerance of the method for the overlaps.
-        ----------------
+    def solver(
+        self,
+        Internal_Call: bool = False,
+        N: Optional[int] = None,
+        l: Optional[List[int]] = None,
+        tol: Optional[float] = None,
+        **kwargs
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Solve using Schwarz domain decomposition.
+        
+        Interval is decomposed into k subintervals with overlaps specified by l.
+        
+        Args:
+            Internal_Call: If True, suppresses output messages.
+            N: Total number of partitions.
+            l: Vector with entry l[i] corresponding to the number of common nodes
+               of subintervals I_i and I_{i+1}.
+            tol: Error tolerance for the iterative method.
+            **kwargs: Additional parameters (unused).
+            
+        Returns:
+            Tuple of (x, solution) arrays.
+            
+        Raises:
+            ValueError: If required parameters are not provided.
         """
         if N is None:
-            raise ValueError("N (number of partitions must be provided.")
+            raise ValueError("N (number of partitions) must be provided.")
         if l is None:
-            raise ValueError("N (number of partitions must be provided.")
+            raise ValueError("l (overlap vector) must be provided.")
         if tol is None:
             raise ValueError("tol (error tolerance) must be provided.")
         N = int(N)
@@ -45,20 +84,20 @@ class schwarz_k(Solver):
         p = []  # List with subinterval lengths.
 
         for i in range(1, k+1):
-            q.append(i * (self.N + self.N % (k+1)) /
+            q.append(i * (N + N % (k+1)) /
                      (k+1) - 0.5 * (l[i-1] + l[i-1] % 2))
-            q.append(i * (self.N + self.N % (k+1)) /
+            q.append(i * (N + N % (k+1)) /
                      (k+1) + 0.5 * (l[i-1] + l[i-1] % 2))
 
         # Index must be an int.
         q = [int(x) for x in q]
 
-        p.append(q[1])  # I1 length equals q1.
+        p.append(N - q[-2])
 
         for i in range(1, k):
             p.append(q[2*i+1] - q[2*(i-1)])
 
-        p.append(self.N - q[-2])
+        p.append(N - q[-2])
         p = [int(y) for y in p]
 
         # Define a list for each problem solve matrix
@@ -75,7 +114,7 @@ class schwarz_k(Solver):
             A[-1][p[i], p[i]] = 0.0
             A[-1][p[i], p[i] - 1] = 0.0
 
-            # Clasification.
+            # Classification.
             if i == 0:  # First subdomine.
                 if self.left:  # Left is Neumann.
                     A[-1][0, 1] = 2 * A[-1][0, 1]
@@ -99,13 +138,13 @@ class schwarz_k(Solver):
                 A[-1][p[i], p[i]] = 0.0
                 A[-1][p[i], p[i] - 1] = 0.0
 
-        Id = identity(p[i] + 1, dtype="float64", format="csc")
-        # Use csc for performance.
-        A[-1].tocsc()
-        A[-1] = Id + self.nu/dx2 * A[-1]
+            Id = identity(p[i] + 1, dtype="float64", format="csc")
+            # Use csc for performance.
+            A[-1].tocsc()
+            A[-1] = Id + self.alpha/dx2 * A[-1]
 
-        # LU decomposition.
-        LU.append(splu(A[-1]))
+            # LU decomposition.
+            LU.append(splu(A[-1]))
 
         # Resolution.
         # Horizontally stack the solution vectors of each problem.
@@ -123,7 +162,7 @@ class schwarz_k(Solver):
 
             # Solve first interval.
             b[0] = int(not self.left) * self.ua + int(self.left) * \
-                (fun_x[0] - self.ua * 2 * self.nu / dx)
+                (fun_x[0] - self.ua * 2 * self.alpha / dx)
             b[q[1]] = u_old[q[1]]
             u_new[:q[1]+1] = LU[0].solve(b[:q[1]+1])
             error_list.append(max(abs(u_new[:q[1]+1] - u_old[:q[1]+1])))
@@ -135,15 +174,14 @@ class schwarz_k(Solver):
                 b[q[2*i+1]] = u_old[q[2*i+1]]
                 u_new[q[2*(i-1)]:q[2*i+1] +
                       1] = LU[i].solve(b[q[2*(i-1)]:q[2*i+1]+1])
-                u_old[q[2*(i-1)]:q[2*i+1]+1] = u_new[q[2*(i-1)]:q[2*i+1]+1]
-            for i in range(1, k):
                 error_list.append(
                     max(abs(u_new[q[2*(i-1)]:q[2*i+1]+1] - u_old[q[2*(i-1)]:q[2*i+1]+1])))
+                u_old[q[2*(i-1)]:q[2*i+1]+1] = u_new[q[2*(i-1)]:q[2*i+1]+1]
 
             # Solve last interval.
             b[q[-2]] = u_old[q[-2]]
             b[-2] = int(not self.right) * self.ub + int(self.right) * \
-                (fun_x[-1] - self.ub * 2 * self.nu / dx)
+                (fun_x[-1] - self.ub * 2 * self.alpha / dx)
             u_new[q[-2]:] = LU[-1].solve(b[q[-2]:])
             error_list.append(max(abs(u_new[q[-2]:] - u_old[q[-2]:])))
             u_old[q[-2]:] = u_new[q[-2]:]
